@@ -3,6 +3,7 @@ const router = require("express").Router();
 const Booking = require("../models/booking");
 const Service = require("../models/service");
 const User = require("../models/user");
+const { hasBookingConflict } = require("../utils/bookingHelper");
 
 // use your existing auth middleware that sets req.user = { id, role }
 // adjust require path if your middleware is in a different folder
@@ -13,51 +14,39 @@ const authenticationToken = require("./auth");
  * Body: { serviceId, scheduledAt, notes }
  * Only authenticated users (role === 'user') should create bookings
  */
+// POST /api/v1/booking/create
 router.post("/create", authenticationToken, async (req, res) => {
   try {
-    const userId = req.user && req.user.id;
-    if (!userId) return res.status(401).json({ message: "Unauthorized" });
-
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    // allow both users & vendors to book
-    if (user.role !== "user" && user.role !== "vendor") {
-      return res.status(403).json({ message: "Not allowed" });
-    }
-
+    const userId = req.user.id;
     const { serviceId, scheduledAt, notes } = req.body;
-    if (!serviceId || !scheduledAt)
-      return res
-        .status(400)
-        .json({ message: "serviceId and scheduledAt required" });
+    if (!serviceId || !scheduledAt) return res.status(400).json({ message: "serviceId and scheduledAt required" });
 
     const service = await Service.findById(serviceId);
-    if (!service || !service.active)
-      return res.status(404).json({ message: "Service not found or inactive" });
+    if (!service) return res.status(404).json({ message: "Service not found" });
 
-    // prevent vendor booking their own service
-    if (user.role === "vendor" && String(service.vendor) === String(userId)) {
-      return res
-        .status(400)
-        .json({ message: "Vendors cannot book their own service" });
+    const vendorId = String(service.vendor);
+
+    // prevent vendor booking their own service if business rule requires
+    if (String(userId) === vendorId) return res.status(403).json({ message: "Vendors cannot book their own service" });
+
+    const duration = service.durationMins || 30;
+    const conflict = await hasBookingConflict(vendorId, scheduledAt, duration);
+    if (conflict) {
+      return res.status(409).json({ message: "Requested slot conflicts with existing booking" });
     }
 
     const booking = new Booking({
-      service: service._id,
       user: userId,
-      vendor: service.vendor,
+      vendor: vendorId,
+      service: serviceId,
       scheduledAt: new Date(scheduledAt),
-      price: service.price || 0,
+      durationMins: duration,
       notes,
+      status: "pending",
     });
 
-    const saved = await booking.save();
-
-    return res.status(201).json({
-      message: "Booking created",
-      booking: saved,
-    });
+    await booking.save();
+    return res.status(201).json({ message: "Booking created", booking });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Internal Server Error" });

@@ -3,6 +3,68 @@ const router = require("express").Router();
 const User = require("../models/user");
 const authenticationToken = require("./auth"); // same middleware you already use
 
+// GET /api/v1/vendors
+// query: service, lat, lng, radius (meters), page, limit, q, onlyApproved
+router.get("/", async (req, res) => {
+  try {
+    const { service, lat, lng, radius = 5000, page = 1, limit = 20, q, onlyApproved } = req.query;
+    const skip = (Math.max(parseInt(page, 10), 1) - 1) * parseInt(limit, 10);
+
+    const baseFilter = { role: "vendor" };
+    if (onlyApproved === "true") baseFilter.isApproved = true;
+    if (service) baseFilter.serviceType = service;
+    if (q) {
+      baseFilter.$or = [
+        { businessName: { $regex: q, $options: "i" } },
+        { username: { $regex: q, $options: "i" } },
+      ];
+    }
+
+    if (lat && lng) {
+      const lngNum = parseFloat(lng);
+      const latNum = parseFloat(lat);
+      const radiusNum = parseInt(radius, 10);
+
+      const agg = [
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [lngNum, latNum] },
+            distanceField: "distanceMeters",
+            spherical: true,
+            maxDistance: radiusNum,
+            query: baseFilter,
+          },
+        },
+        { $skip: skip },
+        { $limit: parseInt(limit, 10) },
+        {
+          $project: {
+            password: 0,
+            resetPasswordToken: 0,
+            resetPasswordExpires: 0,
+            // optionally hide email/phone for public list
+          },
+        },
+      ];
+
+      const results = await User.aggregate(agg);
+      return res.status(200).json({ data: results });
+    }
+
+    const total = await User.countDocuments(baseFilter);
+    const docs = await User.find(baseFilter)
+      .select("-password -resetPasswordToken -resetPasswordExpires")
+      .skip(skip)
+      .limit(parseInt(limit, 10))
+      .lean();
+
+    return res.status(200).json({ data: docs, total });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
 // GET /api/v1/vendor/dashboard
 router.get("/dashboard", authenticationToken, async (req, res) => {
   try {

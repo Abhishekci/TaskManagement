@@ -35,6 +35,20 @@ const userSchema = new mongoose.Schema(
     serviceType: { type: [String] }, // e.g. ["salon", "plumbing"]
     address: { type: String },
 
+    // GeoJSON Point for vendor location (lng, lat)
+   // models/user.js (partial) — replace previous location block with this
+    location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        // do NOT set a default here — only set type when coordinates provided
+      },
+      coordinates: {
+        type: [Number], // [lng, lat]
+      },
+    },
+
+
     // models/user.js (snippet)
     profilePic: {
       url: { type: String },
@@ -60,6 +74,9 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// create 2dsphere index for geo queries
+userSchema.index({ location: "2dsphere" });
 
 // Ensure vendors provide serviceType(s)
 userSchema.pre("validate", function (next) {

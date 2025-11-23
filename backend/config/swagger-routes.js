@@ -195,6 +195,108 @@ const paths = {
     },
   },
 
+  // Vendors list / nearest
+  "/api/v1/vendors": {
+    get: {
+      tags: ["Vendor"],
+      summary: "List vendors (filter by service / nearest by lat/lng)",
+      description:
+        "Query params: service (string), lat (number), lng (number), radius (meters), page, limit, q (search), onlyApproved (true/false)",
+      parameters: [
+        { in: "query", name: "service", schema: { type: "string" } },
+        { in: "query", name: "lat", schema: { type: "number" } },
+        { in: "query", name: "lng", schema: { type: "number" } },
+        { in: "query", name: "radius", schema: { type: "number" }, description: "meters" },
+        { in: "query", name: "page", schema: { type: "integer" } },
+        { in: "query", name: "limit", schema: { type: "integer" } },
+        { in: "query", name: "q", schema: { type: "string" }, description: "search businessName or username" },
+        { in: "query", name: "onlyApproved", schema: { type: "string" }, description: "true to filter only approved vendors" },
+      ],
+      responses: {
+        "200": {
+          description: "Array of vendors (optionally with distanceMeters if lat/lng provided)",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  data: {
+                    type: "array",
+                    items: { $ref: "#/components/schemas/VendorShort" },
+                  },
+                  total: { type: "integer" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+
+    // Reviews
+  "/api/v1/reviews": {
+    post: {
+      tags: ["Review"],
+      summary: "Create a review for vendor (authenticated)",
+      security: [{ bearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                vendorId: { type: "string", example: "64a1f0..." },
+                serviceId: { type: "string", example: "64a1f0..." },
+                rating: { type: "number", example: 5 },
+                text: { type: "string", example: "Great job" },
+              },
+              required: ["vendorId", "rating"],
+            },
+          },
+        },
+      },
+      responses: {
+        "201": { description: "Review created" },
+        "400": { description: "Bad request" },
+        "401": { description: "Unauthorized" },
+      },
+    },
+  },
+
+    "/api/v1/reviews/vendor/{id}": {
+    get: {
+      tags: ["Review"],
+      summary: "List reviews for a vendor and average rating",
+      parameters: [{ in: "path", name: "id", schema: { type: "string" }, required: true }],
+      responses: {
+        "200": {
+          description: "List of reviews with avgRating and count",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  data: {
+                    type: "object",
+                    properties: {
+                      reviews: { type: "array", items: { $ref: "#/components/schemas/ReviewResp" } },
+                      avgRating: { type: "number" },
+                      count: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        "400": { description: "Invalid vendor id" },
+        "404": { description: "Not found" },
+      },
+    },
+  },
+
     // Service gallery endpoints
   "/api/v1/service/{id}/images": {
     post: {
@@ -468,7 +570,66 @@ swaggerSpec.components.schemas = Object.assign(
         public_id: { type: "string", example: "services/123/abc" },
         uploadedAt: { type: "string", example: "2025-01-01T12:00:00.000Z" }
       }
+    },
+
+      // simple vendor representation used in lists
+  VendorShort: {
+    type: "object",
+    properties: {
+      _id: { type: "string", example: "691e2193dbe2dc5ae7219017" },
+      username: { type: "string", example: "vendor_demo" },
+      businessName: { type: "string", example: "Demo Salon" },
+      serviceType: { type: "array", items: { type: "string" }, example: ["salon"] },
+      address: { type: "string", example: "MG Road" },
+      profilePic: {
+        type: "object",
+        properties: {
+          url: { type: "string" }
+        }
+      },
+      distanceMeters: { type: "number", example: 1200, description: "Returned when lat/lng provided" },
+      isApproved: { type: "boolean", example: true }
     }
+  },
+
+  BookingCreate: {
+    type: "object",
+    properties: {
+      serviceId: { type: "string", example: "64a1f0..." },
+      scheduledAt: { type: "string", format: "date-time", example: "2025-12-01T10:00:00.000Z" },
+      notes: { type: "string", example: "Please be on time" }
+    },
+    required: ["serviceId", "scheduledAt"]
+  },
+
+  ReviewResp: {
+    type: "object",
+    properties: {
+      _id: { type: "string" },
+      rating: { type: "number" },
+      text: { type: "string" },
+      createdAt: { type: "string" },
+      user: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          username: { type: "string" },
+          profilePic: { type: "object", properties: { url: { type: "string" } } }
+        }
+      }
+    }
+  },
+
+  // If you do not yet have a Review schema in components, add it too
+  Review: {
+    type: "object",
+    properties: {
+      vendorId: { type: "string" },
+      serviceId: { type: "string" },
+      rating: { type: "number" },
+      text: { type: "string" }
+    }
+  }
   }
 );
 

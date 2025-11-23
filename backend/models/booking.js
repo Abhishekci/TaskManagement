@@ -7,6 +7,10 @@ const BookingSchema = new mongoose.Schema(
     user: { type: mongoose.Types.ObjectId, ref: "user", required: true }, // who booked
     vendor: { type: mongoose.Types.ObjectId, ref: "user", required: true }, // service owner
     scheduledAt: { type: Date, required: true }, // when the booking is scheduled
+
+    // duration in minutes
+    durationMins: { type: Number, required: true, default: 30 },
+    
     status: {
       type: String,
       enum: ["pending", "accepted", "rejected", "completed", "cancelled"],

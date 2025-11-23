@@ -10,15 +10,17 @@ const bookingAPI = require("./routes/booking");
 const TaskAPI = require("./routes/task");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./config/swagger-routes");
+const ReviewAPI = require('./routes/review');
 
 app.use(cors());
 app.use(express.json());
 
 app.use("/api/v1", UserAPI);
-app.use("/api/v1/vendor", VendorAPI);
+app.use("/api/v1/vendors", VendorAPI);
 app.use("/api/v1/service", serviceAPI);
 app.use("/api/v1/booking", bookingAPI);
 app.use("/api/v2", TaskAPI);
+app.use("/api/v1/reviews", ReviewAPI);
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
