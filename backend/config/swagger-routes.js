@@ -194,14 +194,47 @@ const paths = {
       responses: { 200: { description: "Array of services" } },
     },
   },
+  "/api/v1/service/{id}": {
+    get: {
+      tags: ["Service"],
+      summary: "Get service details for booking page (public)",
+      description: "Returns complete service information including vendor details, images, reviews, ratings, and availability for the next 7 days",
+      parameters: [
+        {
+          in: "path",
+          name: "id",
+          schema: { type: "string" },
+          required: true,
+          description: "Service ID"
+        },
+      ],
+      responses: {
+        "200": {
+          description: "Service details with vendor, reviews, and availability",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  data: { $ref: "#/components/schemas/ServiceDetails" }
+                }
+              }
+            }
+          }
+        },
+        "400": { description: "Invalid service ID" },
+        "404": { description: "Service not found or not available" }
+      }
+    }
+  },
 
   // Vendors list / nearest
   "/api/v1/vendors": {
     get: {
       tags: ["Vendor"],
-      summary: "List vendors (filter by service / nearest by lat/lng)",
+      summary: "List vendors with their services (filter by service / nearest by lat/lng)",
       description:
-        "Query params: service (string), lat (number), lng (number), radius (meters), page, limit, q (search), onlyApproved (true/false)",
+        "Returns vendors with their services array (including service IDs for booking). Query params: service (string), lat (number), lng (number), radius (meters), page, limit, q (search), onlyApproved (true/false)",
       parameters: [
         { in: "query", name: "service", schema: { type: "string" } },
         { in: "query", name: "lat", schema: { type: "number" } },
@@ -214,7 +247,7 @@ const paths = {
       ],
       responses: {
         "200": {
-          description: "Array of vendors (optionally with distanceMeters if lat/lng provided)",
+          description: "Array of vendors with their services (optionally with distanceMeters if lat/lng provided)",
           content: {
             "application/json": {
               schema: {
@@ -222,7 +255,7 @@ const paths = {
                 properties: {
                   data: {
                     type: "array",
-                    items: { $ref: "#/components/schemas/VendorShort" },
+                    items: { $ref: "#/components/schemas/VendorWithServices" },
                   },
                   total: { type: "integer" },
                 },
@@ -592,6 +625,43 @@ swaggerSpec.components.schemas = Object.assign(
     }
   },
 
+  // Vendor with services array (used in vendor list endpoint)
+  VendorWithServices: {
+    type: "object",
+    properties: {
+      _id: { type: "string", example: "691e2193dbe2dc5ae7219017" },
+      username: { type: "string", example: "vendor_demo" },
+      businessName: { type: "string", example: "Demo Salon" },
+      serviceType: { type: "array", items: { type: "string" }, example: ["salon"] },
+      address: { type: "string", example: "MG Road" },
+      phone: { type: "string", example: "9876543210" },
+      email: { type: "string", example: "vendor@example.com" },
+      profilePic: {
+        type: "object",
+        properties: {
+          url: { type: "string" }
+        }
+      },
+      distanceMeters: { type: "number", example: 1200, description: "Returned when lat/lng provided" },
+      isApproved: { type: "boolean", example: true },
+      services: {
+        type: "array",
+        description: "List of services offered by this vendor",
+        items: {
+          type: "object",
+          properties: {
+            _id: { type: "string", example: "6922f8ac3795ab32e7f61019" },
+            title: { type: "string", example: "Premium Haircut" },
+            description: { type: "string", example: "Professional haircut service" },
+            price: { type: "number", example: 500 },
+            durationMins: { type: "number", example: 45 },
+            serviceType: { type: "string", example: "salon" }
+          }
+        }
+      }
+    }
+  },
+
   BookingCreate: {
     type: "object",
     properties: {
@@ -628,6 +698,90 @@ swaggerSpec.components.schemas = Object.assign(
       serviceId: { type: "string" },
       rating: { type: "number" },
       text: { type: "string" }
+    }
+  },
+
+  // Service details response schema
+  ServiceDetails: {
+    type: "object",
+    properties: {
+      service: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          serviceType: { type: "string" },
+          price: { type: "number" },
+          durationMins: { type: "number" },
+          images: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ServiceImage" }
+          },
+          createdAt: { type: "string" },
+          updatedAt: { type: "string" }
+        }
+      },
+      vendor: {
+        type: "object",
+        properties: {
+          _id: { type: "string" },
+          username: { type: "string" },
+          businessName: { type: "string" },
+          phone: { type: "string" },
+          email: { type: "string" },
+          address: { type: "string" },
+          location: {
+            type: "object",
+            properties: {
+              type: { type: "string", example: "Point" },
+              coordinates: {
+                type: "array",
+                items: { type: "number" },
+                example: [77.5946, 12.9716]
+              }
+            }
+          },
+          profilePic: {
+            type: "object",
+            properties: {
+              url: { type: "string" },
+              public_id: { type: "string" }
+            }
+          },
+          serviceType: {
+            type: "array",
+            items: { type: "string" }
+          }
+        }
+      },
+      reviews: {
+        type: "object",
+        properties: {
+          avgRating: { type: "number", example: 4.5 },
+          totalReviews: { type: "integer", example: 10 },
+          list: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ReviewResp" }
+          }
+        }
+      },
+      availability: {
+        type: "object",
+        properties: {
+          bookedSlots: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                scheduledAt: { type: "string", format: "date-time" },
+                durationMins: { type: "number" }
+              }
+            }
+          },
+          message: { type: "string", example: "Check available slots for the next 7 days" }
+        }
+      }
     }
   }
   }

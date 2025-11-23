@@ -1,6 +1,7 @@
 // routes/vendor.js
 const router = require("express").Router();
 const User = require("../models/user");
+const Service = require("../models/service");
 const authenticationToken = require("./auth"); // same middleware you already use
 
 // GET /api/v1/vendors
@@ -19,6 +20,9 @@ router.get("/", async (req, res) => {
         { username: { $regex: q, $options: "i" } },
       ];
     }
+
+    let vendors;
+    let total;
 
     if (lat && lng) {
       const lngNum = parseFloat(lng);
@@ -47,18 +51,52 @@ router.get("/", async (req, res) => {
         },
       ];
 
-      const results = await User.aggregate(agg);
-      return res.status(200).json({ data: results });
+      vendors = await User.aggregate(agg);
+    } else {
+      total = await User.countDocuments(baseFilter);
+      vendors = await User.find(baseFilter)
+        .select("-password -resetPasswordToken -resetPasswordExpires")
+        .skip(skip)
+        .limit(parseInt(limit, 10))
+        .lean();
     }
 
-    const total = await User.countDocuments(baseFilter);
-    const docs = await User.find(baseFilter)
-      .select("-password -resetPasswordToken -resetPasswordExpires")
-      .skip(skip)
-      .limit(parseInt(limit, 10))
+    // Fetch services for each vendor
+    const vendorIds = vendors.map(v => v._id);
+    const services = await Service.find({ 
+      vendor: { $in: vendorIds },
+      active: true 
+    })
+      .select("_id vendor title description price durationMins serviceType")
       .lean();
 
-    return res.status(200).json({ data: docs, total });
+    // Group services by vendor
+    const servicesByVendor = {};
+    services.forEach(svc => {
+      const vendorId = svc.vendor.toString();
+      if (!servicesByVendor[vendorId]) {
+        servicesByVendor[vendorId] = [];
+      }
+      servicesByVendor[vendorId].push({
+        _id: svc._id,
+        title: svc.title,
+        description: svc.description,
+        price: svc.price,
+        durationMins: svc.durationMins,
+        serviceType: svc.serviceType
+      });
+    });
+
+    // Attach services to each vendor
+    const vendorsWithServices = vendors.map(vendor => ({
+      ...vendor,
+      services: servicesByVendor[vendor._id.toString()] || []
+    }));
+
+    return res.status(200).json({ 
+      data: vendorsWithServices, 
+      total: total !== undefined ? total : vendorsWithServices.length 
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Internal Server Error" });

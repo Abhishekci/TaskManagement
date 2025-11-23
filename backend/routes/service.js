@@ -202,4 +202,114 @@ router.get("/search", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/v1/service/:id
+ * Public: Get complete service details for booking page
+ * Returns: service info, vendor details, images, reviews, ratings, availability
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const serviceId = req.params.id;
+    
+    // Validate ObjectId
+    const mongoose = require('mongoose');
+    if (!mongoose.Types.ObjectId.isValid(serviceId)) {
+      return res.status(400).json({ message: "Invalid service ID" });
+    }
+
+    // Find service and populate vendor details
+    const service = await Service.findById(serviceId).populate({
+      path: "vendor",
+      select: "username businessName phone email address location profilePic serviceType",
+    });
+
+    if (!service) {
+      return res.status(404).json({ message: "Service not found" });
+    }
+
+    // Check if service is active
+    if (!service.active) {
+      return res.status(404).json({ message: "Service is not available" });
+    }
+
+    // Get reviews for this vendor
+    const Review = require("../models/review");
+    const reviews = await Review.find({ vendor: service.vendor._id })
+      .populate("user", "username profilePic")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Calculate average rating
+    const reviewStats = await Review.aggregate([
+      { $match: { vendor: new mongoose.Types.ObjectId(service.vendor._id) } },
+      { 
+        $group: { 
+          _id: null, 
+          avgRating: { $avg: "$rating" }, 
+          totalReviews: { $sum: 1 } 
+        } 
+      },
+    ]);
+
+    const avgRating = reviewStats.length ? reviewStats[0].avgRating : null;
+    const totalReviews = reviewStats.length ? reviewStats[0].totalReviews : 0;
+
+    // Get booking availability for next 7 days
+    const Booking = require("../models/booking");
+    const now = new Date();
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const existingBookings = await Booking.find({
+      vendor: service.vendor._id,
+      scheduledAt: { $gte: now, $lte: sevenDaysLater },
+      status: { $in: ["pending", "accepted"] }, // only count pending/accepted bookings
+    })
+      .select("scheduledAt durationMins")
+      .sort({ scheduledAt: 1 });
+
+    // Prepare response
+    const response = {
+      service: {
+        _id: service._id,
+        title: service.title,
+        description: service.description,
+        serviceType: service.serviceType,
+        price: service.price,
+        durationMins: service.durationMins,
+        images: service.images || [],
+        createdAt: service.createdAt,
+        updatedAt: service.updatedAt,
+      },
+      vendor: {
+        _id: service.vendor._id,
+        username: service.vendor.username,
+        businessName: service.vendor.businessName,
+        phone: service.vendor.phone,
+        email: service.vendor.email,
+        address: service.vendor.address,
+        location: service.vendor.location,
+        profilePic: service.vendor.profilePic,
+        serviceType: service.vendor.serviceType,
+      },
+      reviews: {
+        avgRating: avgRating ? parseFloat(avgRating.toFixed(2)) : null,
+        totalReviews,
+        list: reviews,
+      },
+      availability: {
+        bookedSlots: existingBookings.map(booking => ({
+          scheduledAt: booking.scheduledAt,
+          durationMins: booking.durationMins,
+        })),
+        message: "Check available slots for the next 7 days",
+      },
+    };
+
+    return res.status(200).json({ data: response });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
 module.exports = router;
